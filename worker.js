@@ -70,7 +70,6 @@ const HTML_CONTENT = `
   .profile-name:hover { border-bottom-color: var(--line); }
   .section-title { font-size: 18px; font-weight: 600; margin-bottom: 15px; margin-top: 30px;}
   
-  /* 退出登录按钮 */
   .logout-btn { margin-top: 40px; width: 100%; padding: 14px; border: 2px solid var(--line); background: transparent; font-size: 16px; font-weight: 600; color: var(--text); cursor: pointer; }
   .logout-btn:hover { background: #f0f0f0; }
 
@@ -220,11 +219,48 @@ const HTML_CONTENT = `
     closeModal();
   };
 
-  function getUser() { return localStorage.getItem("bbs_user") || null; }
-  function getAvatar() { return localStorage.getItem("bbs_avatar") || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'></path><circle cx='12' cy='7' r='4'></circle></svg>"; }
+  // === 登录与用户状态 ===
+  // 严格判断：有 token 才算登录
+  function getUser() { 
+    const token = localStorage.getItem("bbs_token");
+    return token ? (localStorage.getItem("bbs_user") || "匿名用户") : null; 
+  }
+  
+  function getAvatar() { 
+    return localStorage.getItem("bbs_avatar") || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'></path><circle cx='12' cy='7' r='4'></circle></svg>"; 
+  }
+
+  function requireLogin() {
+    if (!localStorage.getItem("bbs_token")) {
+      const returnUrl = encodeURIComponent(window.location.href);
+      window.location.href = \`\${SSO_URL}?returnUrl=\${returnUrl}\`; 
+      return false;
+    }
+    return true;
+  }
+
+  // 处理从 SSO 登录回来的参数
+  function handleSSOCallback() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token'); 
+    const username = urlParams.get('username');
+    
+    if (token && username) {
+      // 更新最新 Token
+      localStorage.setItem("bbs_token", token);
+      
+      // 【防覆盖机制】只有本地没存过名字，才用邮箱；如果改过名，坚决保留本地的
+      if (!localStorage.getItem("bbs_user")) {
+        localStorage.setItem("bbs_user", username);
+      }
+      
+      // 清理网址
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }
 
   function changeAvatar() {
-    if (!getUser()) return;
+    if (!requireLogin()) return;
     const input = document.createElement("input"); input.type = "file"; input.accept = "image/*";
     input.onchange = (e) => {
       const file = e.target.files[0]; if (!file) return;
@@ -246,31 +282,27 @@ const HTML_CONTENT = `
   }
 
   function changeName() {
-    if (!getUser()) { requireLogin(); return; }
+    if (!requireLogin()) return;
     showModal("修改昵称", "请输入新的用户名", true, getUser(), (newName) => {
       if (newName && newName.trim()) {
-        localStorage.setItem("bbs_user", newName.trim()); updateUI();
+        localStorage.setItem("bbs_user", newName.trim()); 
+        updateUI();
       }
     });
   }
   
   function logout() {
     showModal("确认退出", "确定要退出当前账号吗？", false, "", () => {
-      localStorage.removeItem("bbs_user");
+      // 只清除 Token，保留 bbs_user 和头像
       localStorage.removeItem("bbs_token");
-      // 不清除头像，方便下次登录时本地依然有记录
-      requireLogin();
+      
+      // 跳转登录
+      const returnUrl = encodeURIComponent(window.location.href);
+      window.location.href = \`\${SSO_URL}?returnUrl=\${returnUrl}\`;
     });
   }
 
-  function requireLogin() {
-    if (!getUser()) {
-      const returnUrl = encodeURIComponent(window.location.href);
-      window.location.href = \`\${SSO_URL}?returnUrl=\${returnUrl}\`; return false;
-    }
-    return true;
-  }
-
+  // === 视图切换 ===
   function switchTab(tab, editData = null) {
     if ((tab === 'me' || tab === 'write') && !requireLogin()) return;
     currentTab = tab;
@@ -320,6 +352,7 @@ const HTML_CONTENT = `
     if (currentTab === 'detail' || currentTab === 'write') switchTab('home');
   }
 
+  // === 数据加载 ===
   async function loadHome() {
     const listBox = document.getElementById("home-list");
     listBox.innerHTML = "<p style='color:#888;text-align:center;margin-top:40px;'>加载中...</p>";
@@ -384,7 +417,6 @@ const HTML_CONTENT = `
       avatarBox.src = getAvatar(); 
       contentBox.innerText = data.article.content;
       
-      // 文章作者可以修改/删除文章
       if (data.article.author === getUser()) { ownerActions.style.display = "flex"; }
       document.title = data.article.title + " - YL BBS";
 
@@ -405,7 +437,6 @@ const HTML_CONTENT = `
               </div>
               \${delBtn}
             </div>
-            <!-- 点击评论内容即可复制 -->
             <div class="comment-box" onclick="copyComment(this, '\${c.content.replace(/'/g, "\\\\'")}')">\${c.content}</div>
           </div>
         \`}).join("");
@@ -413,7 +444,6 @@ const HTML_CONTENT = `
     } catch (e) { contentBox.innerText = "加载失败"; }
   }
 
-  // 复制评论功能
   function copyComment(el, text) {
     navigator.clipboard.writeText(text).then(() => {
       const original = el.innerText;
@@ -425,7 +455,6 @@ const HTML_CONTENT = `
     });
   }
 
-  // 删除评论功能
   function deleteComment(e, commentId) {
     e.stopPropagation(); // 防止触发复制事件
     showModal("删除评论", "确定要删除这条评论吗？", false, "", async () => {
@@ -437,6 +466,7 @@ const HTML_CONTENT = `
     });
   }
 
+  // === 发布与修改 ===
   async function publishPost() {
     if (!requireLogin()) return;
     const title = document.getElementById("write-title").value.trim();
@@ -503,15 +533,6 @@ const HTML_CONTENT = `
     if (currentTab === 'home') loadHome();
   }
 
-  function handleSSOCallback() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token'); const username = urlParams.get('username');
-    if (token && username) {
-      localStorage.setItem("bbs_user", username); localStorage.setItem("bbs_token", token);
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-  }
-
   function initRouter() {
     handleSSOCallback();
     const path = window.location.pathname;
@@ -532,7 +553,7 @@ const HTML_CONTENT = `
 `;
 
 // ==========================================
-// 2. 后端 API 逻辑 (新增了评论删除)
+// 2. 后端 API 逻辑 
 // ==========================================
 export default {
   async fetch(request, env) {
@@ -589,7 +610,6 @@ export default {
           return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         
-        // 删除评论
         if (request.method === "DELETE" && url.pathname.startsWith("/api/comments/")) {
           const commentId = url.pathname.split("/").pop();
           await env.DB.prepare("DELETE FROM comments WHERE id = ?").bind(commentId).run();
