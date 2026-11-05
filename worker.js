@@ -200,6 +200,15 @@ const HTML_CONTENT = `
   let currentArticleAuthor = null;
   let allArticles = [];
 
+  // === 全局用户状态 ===
+  let myProfile = { 
+    email: localStorage.getItem("bbs_email") || "",
+    nickname: localStorage.getItem("bbs_nickname") || "",
+    avatar: localStorage.getItem("bbs_avatar") || ""
+  };
+
+  const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'></path><circle cx='12' cy='7' r='4'></circle></svg>";
+
   // === 弹窗控制 ===
   let modalCallback = null;
   function showModal(title, desc, isInput, inputValue, callback) {
@@ -219,16 +228,13 @@ const HTML_CONTENT = `
     closeModal();
   };
 
-  // === 登录与用户状态 ===
-  // 核心修复：读取顺序：自定义名 > 基础邮箱名 > 匿名
   function getUser() { 
-    const token = localStorage.getItem("bbs_token");
-    if (!token) return null; 
-    return localStorage.getItem("bbs_custom_name") || localStorage.getItem("bbs_user") || "匿名用户"; 
+    if (!localStorage.getItem("bbs_token")) return null; 
+    return myProfile.nickname || myProfile.email || "匿名用户"; 
   }
   
   function getAvatar() { 
-    return localStorage.getItem("bbs_avatar") || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'></path><circle cx='12' cy='7' r='4'></circle></svg>"; 
+    return myProfile.avatar || defaultAvatar; 
   }
 
   function requireLogin() {
@@ -240,7 +246,25 @@ const HTML_CONTENT = `
     return true;
   }
 
-  // 处理从 SSO 登录回来的参数
+  // === 从 D1 加载真实的用户资料 ===
+  async function loadUserProfile() {
+    if (!myProfile.email) return;
+    try {
+      const res = await fetch(\`\${API_BASE}/api/profile?email=\${encodeURIComponent(myProfile.email)}\`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          if (data.nickname) myProfile.nickname = data.nickname;
+          if (data.avatar) myProfile.avatar = data.avatar; 
+          
+          localStorage.setItem("bbs_nickname", myProfile.nickname);
+          if (myProfile.avatar) localStorage.setItem("bbs_avatar", myProfile.avatar);
+          updateUI();
+        }
+      }
+    } catch (e) { console.error("加载资料失败", e); }
+  }
+
   function handleSSOCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token'); 
@@ -248,15 +272,11 @@ const HTML_CONTENT = `
     
     if (token && username) {
       localStorage.setItem("bbs_token", token);
-      localStorage.setItem("bbs_user", username);
-
-      // 【终极防御】如果你本地存过自定义名字，那就忽略这次传过来的邮箱，避免重置
-      const customName = localStorage.getItem("bbs_custom_name");
-      if (customName) {
-        localStorage.setItem("bbs_user", customName);
-      }
+      localStorage.setItem("bbs_email", username);
+      myProfile.email = username;
       
       window.history.replaceState({}, document.title, window.location.pathname);
+      loadUserProfile();
     }
   }
 
@@ -272,8 +292,16 @@ const HTML_CONTENT = `
           const canvas = document.createElement("canvas"); const ctx = canvas.getContext("2d");
           const size = 150; canvas.width = size; canvas.height = size;
           ctx.drawImage(img, 0, 0, size, size);
-          localStorage.setItem("bbs_avatar", canvas.toDataURL("image/jpeg", 0.8));
-          updateUI();
+          const base64 = canvas.toDataURL("image/jpeg", 0.8);
+          
+          fetch(\`\${API_BASE}/api/profile\`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: myProfile.email, avatar: base64 })
+          }).then(() => {
+            myProfile.avatar = base64;
+            localStorage.setItem("bbs_avatar", base64);
+            updateUI();
+          });
         };
         img.src = ev.target.result;
       };
@@ -287,9 +315,14 @@ const HTML_CONTENT = `
     showModal("修改昵称", "请输入新的用户名", true, getUser(), (newName) => {
       if (newName && newName.trim()) {
         const finalName = newName.trim();
-        localStorage.setItem("bbs_user", finalName); 
-        localStorage.setItem("bbs_custom_name", finalName); // 防覆盖标记
-        updateUI();
+        fetch(\`\${API_BASE}/api/profile\`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: myProfile.email, nickname: finalName })
+        }).then(() => {
+          myProfile.nickname = finalName;
+          localStorage.setItem("bbs_nickname", finalName);
+          updateUI();
+        });
       }
     });
   }
@@ -297,14 +330,11 @@ const HTML_CONTENT = `
   function logout() {
     showModal("确认退出", "确定要退出当前账号吗？", false, "", () => {
       localStorage.removeItem("bbs_token");
-      localStorage.removeItem("bbs_user");
-      // 保留 bbs_custom_name 和头像，下次登录依然认得
       const returnUrl = encodeURIComponent(window.location.href);
       window.location.href = \`\${SSO_URL}?returnUrl=\${returnUrl}\`;
     });
   }
 
-  // === 视图切换 ===
   function switchTab(tab, editData = null) {
     if ((tab === 'me' || tab === 'write') && !requireLogin()) return;
     currentTab = tab;
@@ -326,7 +356,6 @@ const HTML_CONTENT = `
     if (tab === 'home') { document.getElementById('nav-home')?.classList.add('active'); document.getElementById('top-home')?.classList.add('active'); }
     if (tab === 'me') { document.getElementById('nav-me')?.classList.add('active'); document.getElementById('top-me')?.classList.add('active'); }
 
-    // 强制隐藏发布按钮（防止从编辑页返回时还留着）
     publishBtn.style.display = "none";
 
     if (tab === 'home') {
@@ -340,7 +369,7 @@ const HTML_CONTENT = `
     } else if (tab === 'write') {
       nav.style.display = "flex"; commentBar.classList.remove('active');
       btnBack.style.display = "block"; 
-      publishBtn.style.display = "block"; // 显示右上角发布按钮
+      publishBtn.style.display = "block";
       headerTitle.innerText = editData ? "编辑文章" : "YL BBS 发布";
       publishBtn.innerText = editData ? "确认更改" : "发布";
       document.getElementById('write-title').value = editData ? editData.title : "";
@@ -358,7 +387,6 @@ const HTML_CONTENT = `
     if (currentTab === 'detail' || currentTab === 'write') switchTab('home');
   }
 
-  // === 数据加载 ===
   async function loadHome() {
     const listBox = document.getElementById("home-list");
     listBox.innerHTML = "<p style='color:#888;text-align:center;margin-top:40px;'>加载中...</p>";
@@ -372,7 +400,7 @@ const HTML_CONTENT = `
       listBox.innerHTML = allArticles.map(a => \`
         <div class="article-card" onclick="openArticle('\${a.id}')">
           <div class="card-header">
-            <img class="avatar-small" src="\${getAvatar()}">
+            <img class="avatar-small" src="\${a.author_avatar || defaultAvatar}">
             <span class="author">\${a.author}</span>
           </div>
           <div class="article-title">\${a.title}</div>
@@ -391,7 +419,7 @@ const HTML_CONTENT = `
     listBox.innerHTML = myArticles.map(a => \`
       <div class="article-card" onclick="openArticle('\${a.id}')">
         <div class="card-header">
-          <img class="avatar-small" src="\${getAvatar()}">
+          <img class="avatar-small" src="\${a.author_avatar || defaultAvatar}">
           <span class="author">\${a.author}</span>
         </div>
         <div class="article-title">\${a.title}</div>
@@ -420,7 +448,8 @@ const HTML_CONTENT = `
       
       currentArticleAuthor = data.article.author;
       authorBox.innerText = data.article.author;
-      avatarBox.src = getAvatar(); 
+      avatarBox.src = data.article.author_avatar || defaultAvatar;
+      
       contentBox.innerText = data.article.content;
       
       if (data.article.author === getUser()) { ownerActions.style.display = "flex"; }
@@ -437,7 +466,7 @@ const HTML_CONTENT = `
           <div class="comment-item">
             <div class="comment-author">
               <div class="comment-author-left">
-                <img class="avatar-small" src="\${getAvatar()}">
+                <img class="avatar-small" src="\${c.author_avatar || defaultAvatar}">
                 <span class="author">\${c.author}</span>
               </div>
               \${delBtn}
@@ -471,7 +500,6 @@ const HTML_CONTENT = `
     });
   }
 
-  // === 发布与修改 ===
   async function publishPost() {
     if (!requireLogin()) return;
     const title = document.getElementById("write-title").value.trim();
@@ -481,7 +509,7 @@ const HTML_CONTENT = `
     try {
       const res = await fetch(\`\${API_BASE}/api/articles\`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, content, author: getUser() })
+        body: JSON.stringify({ title, content, author: getUser(), author_avatar: getAvatar() })
       });
       if (res.ok) { showModal("成功", "发布成功！", false, "", () => switchTab("home")); } else { showModal("失败", "发布失败"); }
     } catch (e) { showModal("错误", "网络错误"); } 
@@ -525,7 +553,7 @@ const HTML_CONTENT = `
     try {
       const res = await fetch(\`\${API_BASE}/api/comments\`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ article_id: currentArticleId, content: text, author: getUser() })
+        body: JSON.stringify({ article_id: currentArticleId, content: text, author: getUser(), author_avatar: getAvatar() })
       });
       if (res.ok) { input.value = ""; loadArticleDetail(currentArticleId); }
     } catch (e) { showModal("错误", "评论失败"); }
@@ -558,7 +586,7 @@ const HTML_CONTENT = `
 `;
 
 // ==========================================
-// 2. 后端 API 逻辑 
+// 2. 后端 API 逻辑 (D1 + KV)
 // ==========================================
 export default {
   async fetch(request, env) {
@@ -573,6 +601,68 @@ export default {
       if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
       try {
+        // 用户资料 API
+        if (request.method === "GET" && url.pathname === "/api/profile") {
+          const email = url.searchParams.get("email");
+          if (!email) return new Response("Missing email", { status: 400, headers: corsHeaders });
+          
+          const user = await env.DB.prepare("SELECT nickname, avatar_key FROM user_profiles WHERE email = ?").bind(email).first();
+          let avatar_url = "";
+          if (user && user.avatar_key) {
+            avatar_url = `https://${url.hostname}/api/avatar/${user.avatar_key}`;
+          }
+          return new Response(JSON.stringify({ 
+            nickname: user ? user.nickname : "", 
+            avatar: avatar_url 
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        if (request.method === "POST" && url.pathname === "/api/profile") {
+          const { email, nickname, avatar } = await request.json();
+          if (!email) return new Response("Missing email", { status: 400, headers: corsHeaders });
+
+          let avatar_key = null;
+          if (avatar) {
+            // 存入 KV，key 为用户的邮箱
+            avatar_key = email;
+            await env.BBS_AVATARS.put(avatar_key, avatar);
+          }
+
+          // 更新 D1
+          const exist = await env.DB.prepare("SELECT email FROM user_profiles WHERE email = ?").bind(email).first();
+          if (exist) {
+            if (nickname && avatar_key) {
+              await env.DB.prepare("UPDATE user_profiles SET nickname = ?, avatar_key = ? WHERE email = ?").bind(nickname, avatar_key, email).run();
+            } else if (nickname) {
+              await env.DB.prepare("UPDATE user_profiles SET nickname = ? WHERE email = ?").bind(nickname, email).run();
+            } else if (avatar_key) {
+              await env.DB.prepare("UPDATE user_profiles SET avatar_key = ? WHERE email = ?").bind(avatar_key, email).run();
+            }
+          } else {
+            await env.DB.prepare("INSERT INTO user_profiles (email, nickname, avatar_key) VALUES (?, ?, ?)").bind(email, nickname || "", avatar_key).run();
+          }
+          return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        // 获取头像 API (从 KV 中读取返回)
+        if (request.method === "GET" && url.pathname.startsWith("/api/avatar/")) {
+          const key = url.pathname.split("/").pop();
+          const base64 = await env.BBS_AVATARS.get(key);
+          if (!base64) return new Response("Not found", { status: 404 });
+          
+          // 把 base64 字符串转换成图片二进制返回
+          const base64Data = base64.split(',')[1];
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          return new Response(bytes, {
+            headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" }
+          });
+        }
+
+        // 文章 API
         if (request.method === "GET" && url.pathname === "/api/articles") {
           const { results } = await env.DB.prepare("SELECT * FROM articles ORDER BY created_at DESC").all();
           return new Response(JSON.stringify(results), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -586,10 +676,10 @@ export default {
         }
 
         if (request.method === "POST" && url.pathname === "/api/articles") {
-          const { title, content, author } = await request.json();
+          const { title, content, author, author_avatar } = await request.json();
           if (!title || !content || !author) return new Response("缺少必要参数", { status: 400, headers: corsHeaders });
           const randomId = Math.floor(Date.now() / 1000) + "" + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-          await env.DB.prepare("INSERT INTO articles (id, title, content, author) VALUES (?, ?, ?, ?)").bind(randomId, title, content, author).run();
+          await env.DB.prepare("INSERT INTO articles (id, title, content, author, author_avatar) VALUES (?, ?, ?, ?, ?)").bind(randomId, title, content, author, author_avatar).run();
           return new Response(JSON.stringify({ success: true, id: randomId }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
@@ -608,10 +698,11 @@ export default {
           return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
+        // 评论 API
         if (request.method === "POST" && url.pathname === "/api/comments") {
-          const { article_id, content, author } = await request.json();
+          const { article_id, content, author, author_avatar } = await request.json();
           if (!article_id || !content || !author) return new Response("缺少必要参数", { status: 400, headers: corsHeaders });
-          await env.DB.prepare("INSERT INTO comments (article_id, content, author) VALUES (?, ?, ?)").bind(article_id, content, author).run();
+          await env.DB.prepare("INSERT INTO comments (article_id, content, author, author_avatar) VALUES (?, ?, ?, ?)").bind(article_id, content, author, author_avatar).run();
           return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         
