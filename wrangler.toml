@@ -1,0 +1,8 @@
+name = "bbs-api"
+main = "worker.js"
+compatibility_date = "2024-03-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bbs-database"
+database_id = "a0f7189d-e40e-4279-9ead-fbb3dd90a470"
