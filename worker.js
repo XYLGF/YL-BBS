@@ -92,12 +92,10 @@ const HTML_CONTENT = `
   .modal-actions button { flex: 1; padding: 10px; border: 2px solid var(--line); background: transparent; font-size: 15px; font-weight: 600; cursor: pointer; }
   .modal-actions button.primary { background: var(--line); color: var(--bg); }
 
-  /* 针对电脑端强制显示顶部导航和发布按钮 */
   @media (min-width: 768px) {
     .bottom-nav { display: none !important; }
     .top-nav { display: flex; }
     .content { padding-bottom: 20px; }
-    /* 电脑端默认隐藏返回箭头，但在详情页/发布页 JS 会将其置为 block */
   }
 </style>
 </head>
@@ -116,7 +114,6 @@ const HTML_CONTENT = `
       <div class="top-nav-item" id="top-me" onclick="switchTab('me')">个人中心</div>
     </div>
 
-    <!-- 电脑和手机共用这个发布按钮 -->
     <button class="publish-btn" id="btn-publish-action" onclick="publishPost()">发布</button>
   </div>
 
@@ -231,14 +228,13 @@ const HTML_CONTENT = `
   }
   
   function getAvatar() { 
-    // 如果没有头像，使用内联的 SVG 默认头像，防止网络错误
     return localStorage.getItem("bbs_avatar") || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'></path><circle cx='12' cy='7' r='4'></circle></svg>"; 
   }
 
   function requireLogin() {
     if (!localStorage.getItem("bbs_token")) {
       const returnUrl = encodeURIComponent(window.location.href);
-      window.location.href = `${SSO_URL}?returnUrl=${returnUrl}`; 
+      window.location.href = \`\${SSO_URL}?returnUrl=\${returnUrl}\`; 
       return false;
     }
     return true;
@@ -304,7 +300,7 @@ const HTML_CONTENT = `
       localStorage.removeItem("bbs_user");
       // 保留 bbs_custom_name 和头像，下次登录依然认得
       const returnUrl = encodeURIComponent(window.location.href);
-      window.location.href = `${SSO_URL}?returnUrl=${returnUrl}`;
+      window.location.href = \`\${SSO_URL}?returnUrl=\${returnUrl}\`;
     });
   }
 
@@ -317,7 +313,7 @@ const HTML_CONTENT = `
     else if (tab === 'me') { window.history.pushState({}, "", "/?tab=me"); }
 
     document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
-    document.getElementById(`view-${tab}`).classList.add('active');
+    document.getElementById(\`view-\${tab}\`).classList.add('active');
     
     const nav = document.getElementById('bottom-nav');
     const commentBar = document.getElementById('comment-bar');
@@ -367,22 +363,22 @@ const HTML_CONTENT = `
     const listBox = document.getElementById("home-list");
     listBox.innerHTML = "<p style='color:#888;text-align:center;margin-top:40px;'>加载中...</p>";
     try {
-      const res = await fetch(`${API_BASE}/api/articles`);
+      const res = await fetch(\`\${API_BASE}/api/articles\`);
       allArticles = await res.json();
       if (allArticles.length === 0) {
         listBox.innerHTML = "<p style='color:#888;text-align:center;margin-top:40px;'>暂无文章，快去发布吧！</p>";
         return;
       }
-      listBox.innerHTML = allArticles.map(a => `
-        <div class="article-card" onclick="openArticle('${a.id}')">
+      listBox.innerHTML = allArticles.map(a => \`
+        <div class="article-card" onclick="openArticle('\${a.id}')">
           <div class="card-header">
-            <img class="avatar-small" src="${getAvatar()}">
-            <span class="author">${a.author}</span>
+            <img class="avatar-small" src="\${getAvatar()}">
+            <span class="author">\${a.author}</span>
           </div>
-          <div class="article-title">${a.title}</div>
-          <div class="article-body">${a.content}</div>
+          <div class="article-title">\${a.title}</div>
+          <div class="article-body">\${a.content}</div>
         </div>
-      `).join("");
+      \`).join("");
     } catch (e) { listBox.innerHTML = "<p style='color:red;text-align:center;'>加载失败，请检查网络</p>"; }
   }
 
@@ -392,16 +388,16 @@ const HTML_CONTENT = `
     const myArticles = allArticles.filter(a => a.author === getUser());
     const listBox = document.getElementById("me-list");
     if (myArticles.length === 0) { listBox.innerHTML = "<p style='color:#888;'>你还没有发布过文章</p>"; return; }
-    listBox.innerHTML = myArticles.map(a => `
-      <div class="article-card" onclick="openArticle('${a.id}')">
+    listBox.innerHTML = myArticles.map(a => \`
+      <div class="article-card" onclick="openArticle('\${a.id}')">
         <div class="card-header">
-          <img class="avatar-small" src="${getAvatar()}">
-          <span class="author">${a.author}</span>
+          <img class="avatar-small" src="\${getAvatar()}">
+          <span class="author">\${a.author}</span>
         </div>
-        <div class="article-title">${a.title}</div>
-        <div class="article-body">${a.content}</div>
+        <div class="article-title">\${a.title}</div>
+        <div class="article-body">\${a.content}</div>
       </div>
-    `).join("");
+    \`).join("");
   }
 
   function openArticle(id) { 
@@ -418,7 +414,7 @@ const HTML_CONTENT = `
     const ownerActions = document.getElementById('owner-actions');
     contentBox.innerText = "加载中..."; authorBox.innerText = ""; commentsBox.innerHTML = ""; ownerActions.style.display = "none";
     try {
-      const res = await fetch(`${API_BASE}/api/articles/${id}`);
+      const res = await fetch(\`\${API_BASE}/api/articles/\${id}\`);
       const data = await res.json();
       if(!data.article) { contentBox.innerText = "文章不存在或已被删除"; return; }
       
@@ -435,20 +431,20 @@ const HTML_CONTENT = `
       } else {
         commentsBox.innerHTML = data.comments.map(c => {
           const canDelete = (c.author === getUser() || currentArticleAuthor === getUser());
-          const delBtn = canDelete ? `<button class="btn-del-comment" onclick="deleteComment(event, ${c.id})">删除</button>` : '';
+          const delBtn = canDelete ? \`<button class="btn-del-comment" onclick="deleteComment(event, \${c.id})">删除</button>\` : '';
           
-          return `
+          return \`
           <div class="comment-item">
             <div class="comment-author">
               <div class="comment-author-left">
-                <img class="avatar-small" src="${getAvatar()}">
-                <span class="author">${c.author}</span>
+                <img class="avatar-small" src="\${getAvatar()}">
+                <span class="author">\${c.author}</span>
               </div>
-              ${delBtn}
+              \${delBtn}
             </div>
-            <div class="comment-box" onclick="copyComment(this, '${c.content.replace(/'/g, "\\\\'")}')">${c.content}</div>
+            <div class="comment-box" onclick="copyComment(this, '\${c.content.replace(/'/g, "\\\\'")}')">\${c.content}</div>
           </div>
-        `}).join("");
+        \`}).join("");
       }
     } catch (e) { contentBox.innerText = "加载失败"; }
   }
@@ -468,7 +464,7 @@ const HTML_CONTENT = `
     e.stopPropagation(); 
     showModal("删除评论", "确定要删除这条评论吗？", false, "", async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/comments/${commentId}`, { method: "DELETE" });
+        const res = await fetch(\`\${API_BASE}/api/comments/\${commentId}\`, { method: "DELETE" });
         if (res.ok) { loadArticleDetail(currentArticleId); } 
         else { showModal("失败", "删除失败"); }
       } catch (error) { showModal("错误", "网络错误"); }
@@ -483,7 +479,7 @@ const HTML_CONTENT = `
     if (!title || !content) return showModal("提示", "标题和内容不能为空！");
     const btn = document.getElementById("btn-publish-action"); btn.innerText = "发布中...";
     try {
-      const res = await fetch(`${API_BASE}/api/articles`, {
+      const res = await fetch(\`\${API_BASE}/api/articles\`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, content, author: getUser() })
       });
@@ -493,7 +489,7 @@ const HTML_CONTENT = `
   }
 
   function editPost() {
-    fetch(`${API_BASE}/api/articles/${currentArticleId}`).then(r => r.json()).then(data => {
+    fetch(\`\${API_BASE}/api/articles/\${currentArticleId}\`).then(r => r.json()).then(data => {
       switchTab('write', { id: data.article.id, title: data.article.title, content: data.article.content });
     });
   }
@@ -504,7 +500,7 @@ const HTML_CONTENT = `
     if (!title || !content) return showModal("提示", "标题和内容不能为空！");
     const btn = document.getElementById("btn-publish-action"); btn.innerText = "保存中...";
     try {
-      const res = await fetch(`${API_BASE}/api/articles/${id}`, {
+      const res = await fetch(\`\${API_BASE}/api/articles/\${id}\`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, content, author: getUser() })
       });
@@ -516,7 +512,7 @@ const HTML_CONTENT = `
   function deletePost() {
     showModal("确认删除", "确定要永久删除这篇文章吗？", false, "", async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/articles/${currentArticleId}`, { method: "DELETE" });
+        const res = await fetch(\`\${API_BASE}/api/articles/\${currentArticleId}\`, { method: "DELETE" });
         if (res.ok) { showModal("已删除", "文章删除成功", false, "", () => switchTab("home")); }
       } catch (e) { showModal("错误", "删除失败"); }
     });
@@ -527,7 +523,7 @@ const HTML_CONTENT = `
     const input = document.getElementById("comment-input"); const text = input.value.trim();
     if (!text) return;
     try {
-      const res = await fetch(`${API_BASE}/api/comments`, {
+      const res = await fetch(\`\${API_BASE}/api/comments\`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ article_id: currentArticleId, content: text, author: getUser() })
       });
