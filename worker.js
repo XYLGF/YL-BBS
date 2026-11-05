@@ -41,10 +41,15 @@ const HTML_CONTENT = `
   .avatar-large-detail { width: 44px; height: 44px; border: 2px solid var(--line); border-radius: 50%; margin-right: 12px; object-fit: cover; background: #eee;}
   .detail-author-name { font-size: 16px; font-weight: 600;}
   .detail-content { font-size: 16px; line-height: 1.6; margin-bottom: 40px; white-space: pre-wrap; }
+  
   .comments-section { border-top: 2px solid var(--line); padding-top: 20px; margin-bottom: 60px; }
-  .comment-item { margin-bottom: 20px; }
-  .comment-author { display: flex; align-items: center; margin-bottom: 10px; }
-  .comment-box { border: 2px solid var(--line); padding: 16px; font-size: 15px; white-space: pre-wrap; }
+  .comment-item { margin-bottom: 20px; position: relative; }
+  .comment-author { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .comment-author-left { display: flex; align-items: center; }
+  .comment-box { border: 2px solid var(--line); padding: 16px; font-size: 15px; white-space: pre-wrap; cursor: pointer; transition: background 0.2s;}
+  .comment-box:hover { background: #f9f9f9; }
+  .btn-del-comment { background: transparent; border: none; font-size: 13px; color: #d32f2f; cursor: pointer; padding: 4px 8px; }
+  .btn-del-comment:hover { text-decoration: underline; }
 
   .owner-actions { display: flex; gap: 12px; margin-bottom: 30px; }
   .btn-outline { flex: 1; padding: 10px; border: 2px solid var(--line); background: transparent; font-size: 15px; font-weight: 600; cursor: pointer; color: var(--text);}
@@ -64,6 +69,10 @@ const HTML_CONTENT = `
   .profile-name { font-size: 22px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
   .profile-name:hover { border-bottom-color: var(--line); }
   .section-title { font-size: 18px; font-weight: 600; margin-bottom: 15px; margin-top: 30px;}
+  
+  /* 退出登录按钮 */
+  .logout-btn { margin-top: 40px; width: 100%; padding: 14px; border: 2px solid var(--line); background: transparent; font-size: 16px; font-weight: 600; color: var(--text); cursor: pointer; }
+  .logout-btn:hover { background: #f0f0f0; }
 
   .input-title { width: 100%; border: none; outline: none; font-size: 20px; font-family: inherit; padding: 20px 0; border-bottom: 2px solid var(--line); margin-bottom: 20px; background: transparent; color: var(--text); font-weight: 600;}
   .input-content { width: 100%; border: none; outline: none; font-size: 18px; font-family: inherit; resize: none; height: 400px; line-height: 1.6; background: transparent; color: var(--text); }
@@ -119,6 +128,8 @@ const HTML_CONTENT = `
       </div>
       <div class="section-title">我发布过的文章</div>
       <div id="me-list"></div>
+      
+      <button class="logout-btn" onclick="logout()">退出登录</button>
     </div>
   </div>
 
@@ -187,6 +198,7 @@ const HTML_CONTENT = `
   const SSO_URL = "https://acss.ylai.website";
   let currentTab = "home";
   let currentArticleId = null;
+  let currentArticleAuthor = null;
   let allArticles = [];
 
   // === 弹窗控制 ===
@@ -241,6 +253,15 @@ const HTML_CONTENT = `
       }
     });
   }
+  
+  function logout() {
+    showModal("确认退出", "确定要退出当前账号吗？", false, "", () => {
+      localStorage.removeItem("bbs_user");
+      localStorage.removeItem("bbs_token");
+      // 不清除头像，方便下次登录时本地依然有记录
+      requireLogin();
+    });
+  }
 
   function requireLogin() {
     if (!getUser()) {
@@ -250,12 +271,10 @@ const HTML_CONTENT = `
     return true;
   }
 
-  // === 视图切换 (加入了浏览器网址 History 控制) ===
   function switchTab(tab, editData = null) {
     if ((tab === 'me' || tab === 'write') && !requireLogin()) return;
     currentTab = tab;
     
-    // 网址跳转控制
     if (tab === 'home') { window.history.pushState({}, "", "/"); }
     else if (tab === 'me') { window.history.pushState({}, "", "/?tab=me"); }
 
@@ -342,10 +361,8 @@ const HTML_CONTENT = `
     \`).join("");
   }
 
-  // === 核心：点击文章，网址变成随机 ID ===
   function openArticle(id) { 
     currentArticleId = id; 
-    // 改变浏览器地址栏，变成类似 /166746664647331
     window.history.pushState({}, "", "/" + id); 
     switchTab('detail'); 
   }
@@ -362,27 +379,62 @@ const HTML_CONTENT = `
       const data = await res.json();
       if(!data.article) { contentBox.innerText = "文章不存在或已被删除"; return; }
       
+      currentArticleAuthor = data.article.author;
       authorBox.innerText = data.article.author;
       avatarBox.src = getAvatar(); 
       contentBox.innerText = data.article.content;
-      if (data.article.author === getUser()) { ownerActions.style.display = "flex"; }
       
-      // 更新页面标题
+      // 文章作者可以修改/删除文章
+      if (data.article.author === getUser()) { ownerActions.style.display = "flex"; }
       document.title = data.article.title + " - YL BBS";
 
-      if (data.comments.length === 0) { commentsBox.innerHTML = "<p style='color:#888;font-size:14px;'>暂无评论，快来抢沙发！</p>"; } 
-      else {
-        commentsBox.innerHTML = data.comments.map(c => \`
+      if (data.comments.length === 0) { 
+        commentsBox.innerHTML = "<p style='color:#888;font-size:14px;'>暂无评论，快来抢沙发！</p>"; 
+      } else {
+        commentsBox.innerHTML = data.comments.map(c => {
+          // 判断是否有权限删除评论：评论作者本人 OR 文章作者
+          const canDelete = (c.author === getUser() || currentArticleAuthor === getUser());
+          const delBtn = canDelete ? \`<button class="btn-del-comment" onclick="deleteComment(event, \${c.id})">删除</button>\` : '';
+          
+          return \`
           <div class="comment-item">
             <div class="comment-author">
-              <img class="avatar-small" src="\${getAvatar()}">
-              <span class="author">\${c.author}</span>
+              <div class="comment-author-left">
+                <img class="avatar-small" src="\${getAvatar()}">
+                <span class="author">\${c.author}</span>
+              </div>
+              \${delBtn}
             </div>
-            <div class="comment-box">\${c.content}</div>
+            <!-- 点击评论内容即可复制 -->
+            <div class="comment-box" onclick="copyComment(this, '\${c.content.replace(/'/g, "\\\\'")}')">\${c.content}</div>
           </div>
-        \`).join("");
+        \`}).join("");
       }
     } catch (e) { contentBox.innerText = "加载失败"; }
+  }
+
+  // 复制评论功能
+  function copyComment(el, text) {
+    navigator.clipboard.writeText(text).then(() => {
+      const original = el.innerText;
+      el.innerText = "已复制!";
+      el.style.textAlign = "center";
+      setTimeout(() => { el.innerText = original; el.style.textAlign = "left"; }, 1000);
+    }).catch(() => {
+      showModal("提示", "复制失败，请手动长按选择");
+    });
+  }
+
+  // 删除评论功能
+  function deleteComment(e, commentId) {
+    e.stopPropagation(); // 防止触发复制事件
+    showModal("删除评论", "确定要删除这条评论吗？", false, "", async () => {
+      try {
+        const res = await fetch(\`\${API_BASE}/api/comments/\${commentId}\`, { method: "DELETE" });
+        if (res.ok) { loadArticleDetail(currentArticleId); } 
+        else { showModal("失败", "删除失败"); }
+      } catch (error) { showModal("错误", "网络错误"); }
+    });
   }
 
   async function publishPost() {
@@ -396,7 +448,7 @@ const HTML_CONTENT = `
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, content, author: getUser() })
       });
-      if (res.ok) { showModal("成功", "发布成功！", false, "", () => switchTab("home")); } else { showModal("失败", "发布失败，请重试"); }
+      if (res.ok) { showModal("成功", "发布成功！", false, "", () => switchTab("home")); } else { showModal("失败", "发布失败"); }
     } catch (e) { showModal("错误", "网络错误"); } 
     finally { btn.innerText = "发布"; }
   }
@@ -460,28 +512,17 @@ const HTML_CONTENT = `
     }
   }
 
-  // 初始化页面路由判断
   function initRouter() {
     handleSSOCallback();
     const path = window.location.pathname;
-    
-    // 如果路径不是根目录，也不是 index.html，说明是一个文章 ID
     if (path !== "/" && path !== "/index.html") {
       const id = path.replace("/", "");
       if (/^\d+$/.test(id)) {
-        currentArticleId = id;
-        switchTab('detail');
-        return;
+        currentArticleId = id; switchTab('detail'); return;
       }
     }
-    
-    // 检查 URL 参数
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('tab') === 'me') {
-      switchTab('me');
-    } else {
-      switchTab('home');
-    }
+    if (urlParams.get('tab') === 'me') { switchTab('me'); } else { switchTab('home'); }
   }
 
   initRouter();
@@ -491,7 +532,7 @@ const HTML_CONTENT = `
 `;
 
 // ==========================================
-// 2. 后端 API 逻辑 (改造了 ID 生成规则)
+// 2. 后端 API 逻辑 (新增了评论删除)
 // ==========================================
 export default {
   async fetch(request, env) {
@@ -521,10 +562,7 @@ export default {
         if (request.method === "POST" && url.pathname === "/api/articles") {
           const { title, content, author } = await request.json();
           if (!title || !content || !author) return new Response("缺少必要参数", { status: 400, headers: corsHeaders });
-          
-          // 生成类似 166746664647331 的长随机数 ID
           const randomId = Math.floor(Date.now() / 1000) + "" + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-          
           await env.DB.prepare("INSERT INTO articles (id, title, content, author) VALUES (?, ?, ?, ?)").bind(randomId, title, content, author).run();
           return new Response(JSON.stringify({ success: true, id: randomId }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
@@ -550,6 +588,13 @@ export default {
           await env.DB.prepare("INSERT INTO comments (article_id, content, author) VALUES (?, ?, ?)").bind(article_id, content, author).run();
           return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
+        
+        // 删除评论
+        if (request.method === "DELETE" && url.pathname.startsWith("/api/comments/")) {
+          const commentId = url.pathname.split("/").pop();
+          await env.DB.prepare("DELETE FROM comments WHERE id = ?").bind(commentId).run();
+          return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
 
         return new Response("Not Found", { status: 404, headers: corsHeaders });
       } catch (e) {
@@ -557,7 +602,6 @@ export default {
       }
     }
 
-    // 如果访问的不是 API，一律返回前端页面（交给前端 JS 去判断 URL 里的文章 ID）
     return new Response(HTML_CONTENT, {
       headers: { "Content-Type": "text/html; charset=utf-8" }
     });
