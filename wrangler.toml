@@ -1,4 +1,4 @@
-name = "bbs-api"
+name = "yl-bbs"
 main = "worker.js"
 compatibility_date = "2024-03-01"
 
@@ -6,3 +6,7 @@ compatibility_date = "2024-03-01"
 binding = "DB"
 database_name = "bbs-database"
 database_id = "a0f7189d-e40e-4279-9ead-fbb3dd90a470"
+
+[[kv_namespaces]]
+binding = "BBS_AVATARS"
+id = "e34b30ae6d044b4f8b43c9ac3ca0b3f0"
