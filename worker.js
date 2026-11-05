@@ -92,10 +92,12 @@ const HTML_CONTENT = `
   .modal-actions button { flex: 1; padding: 10px; border: 2px solid var(--line); background: transparent; font-size: 15px; font-weight: 600; cursor: pointer; }
   .modal-actions button.primary { background: var(--line); color: var(--bg); }
 
+  /* 针对电脑端强制显示顶部导航和发布按钮 */
   @media (min-width: 768px) {
     .bottom-nav { display: none !important; }
     .top-nav { display: flex; }
     .content { padding-bottom: 20px; }
+    /* 电脑端默认隐藏返回箭头，但在详情页/发布页 JS 会将其置为 block */
   }
 </style>
 </head>
@@ -114,6 +116,7 @@ const HTML_CONTENT = `
       <div class="top-nav-item" id="top-me" onclick="switchTab('me')">个人中心</div>
     </div>
 
+    <!-- 电脑和手机共用这个发布按钮 -->
     <button class="publish-btn" id="btn-publish-action" onclick="publishPost()">发布</button>
   </div>
 
@@ -219,8 +222,8 @@ const HTML_CONTENT = `
     closeModal();
   };
 
-  // === 核心修复：登录与用户状态 ===
-  // 优先读取你改过的自定义名字，没有才读默认名
+  // === 登录与用户状态 ===
+  // 核心修复：读取顺序：自定义名 > 基础邮箱名 > 匿名
   function getUser() { 
     const token = localStorage.getItem("bbs_token");
     if (!token) return null; 
@@ -228,6 +231,7 @@ const HTML_CONTENT = `
   }
   
   function getAvatar() { 
+    // 如果没有头像，使用内联的 SVG 默认头像，防止网络错误
     return localStorage.getItem("bbs_avatar") || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'></path><circle cx='12' cy='7' r='4'></circle></svg>"; 
   }
 
@@ -250,7 +254,7 @@ const HTML_CONTENT = `
       localStorage.setItem("bbs_token", token);
       localStorage.setItem("bbs_user", username);
 
-      // 【终极防御】如果你本地存过自定义名字，那就忽略这次传过来的邮箱
+      // 【终极防御】如果你本地存过自定义名字，那就忽略这次传过来的邮箱，避免重置
       const customName = localStorage.getItem("bbs_custom_name");
       if (customName) {
         localStorage.setItem("bbs_user", customName);
@@ -282,7 +286,6 @@ const HTML_CONTENT = `
     input.click();
   }
 
-  // 核心修复：改名时，同时存入专用变量
   function changeName() {
     if (!requireLogin()) return;
     showModal("修改昵称", "请输入新的用户名", true, getUser(), (newName) => {
@@ -297,10 +300,9 @@ const HTML_CONTENT = `
   
   function logout() {
     showModal("确认退出", "确定要退出当前账号吗？", false, "", () => {
-      // 退出时，删掉 Token 和 显示名，保留自定义名 bbs_custom_name
       localStorage.removeItem("bbs_token");
       localStorage.removeItem("bbs_user");
-      
+      // 保留 bbs_custom_name 和头像，下次登录依然认得
       const returnUrl = encodeURIComponent(window.location.href);
       window.location.href = `${SSO_URL}?returnUrl=${returnUrl}`;
     });
@@ -328,17 +330,21 @@ const HTML_CONTENT = `
     if (tab === 'home') { document.getElementById('nav-home')?.classList.add('active'); document.getElementById('top-home')?.classList.add('active'); }
     if (tab === 'me') { document.getElementById('nav-me')?.classList.add('active'); document.getElementById('top-me')?.classList.add('active'); }
 
+    // 强制隐藏发布按钮（防止从编辑页返回时还留着）
+    publishBtn.style.display = "none";
+
     if (tab === 'home') {
       nav.style.display = "flex"; commentBar.classList.remove('active');
-      btnBack.style.display = "none"; publishBtn.style.display = "none";
+      btnBack.style.display = "none"; 
       headerTitle.innerText = "YL BBS"; loadHome();
     } else if (tab === 'me') {
       nav.style.display = "flex"; commentBar.classList.remove('active');
-      btnBack.style.display = "none"; publishBtn.style.display = "none";
+      btnBack.style.display = "none"; 
       headerTitle.innerText = "YL BBS 我的"; loadMe();
     } else if (tab === 'write') {
       nav.style.display = "flex"; commentBar.classList.remove('active');
-      btnBack.style.display = "block"; publishBtn.style.display = "block";
+      btnBack.style.display = "block"; 
+      publishBtn.style.display = "block"; // 显示右上角发布按钮
       headerTitle.innerText = editData ? "编辑文章" : "YL BBS 发布";
       publishBtn.innerText = editData ? "确认更改" : "发布";
       document.getElementById('write-title').value = editData ? editData.title : "";
@@ -346,7 +352,7 @@ const HTML_CONTENT = `
       publishBtn.onclick = () => editData ? submitEdit(editData.id) : publishPost();
     } else if (tab === 'detail') {
       nav.style.display = "none"; commentBar.classList.add('active'); 
-      btnBack.style.display = "block"; publishBtn.style.display = "none";
+      btnBack.style.display = "block"; 
       headerTitle.innerText = "YL BBS"; 
       loadArticleDetail(currentArticleId);
     }
