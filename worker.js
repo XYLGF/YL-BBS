@@ -63,11 +63,8 @@ const HTML_CONTENT = `
   .send-btn svg { width: 20px; height: 20px; stroke: var(--text); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
   .profile-header { display: flex; flex-direction: column; align-items: center; margin-top: 40px; margin-bottom: 40px; }
-  .avatar-large { width: 120px; height: 120px; border: 3px solid var(--line); border-radius: 50%; margin-bottom: 20px; object-fit: cover; cursor: pointer; background: #eee; position: relative;}
-  .avatar-large::after { content: '修改'; position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.5); color: white; font-size: 12px; text-align: center; padding: 4px 0; opacity: 0; transition: 0.2s; border-radius: 0 0 60px 60px;}
-  .avatar-large:hover::after { opacity: 1; }
-  .profile-name { font-size: 22px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
-  .profile-name:hover { border-bottom-color: var(--line); }
+  .avatar-large { width: 120px; height: 120px; border: 3px solid var(--line); border-radius: 50%; margin-bottom: 20px; object-fit: cover; background: #eee;}
+  .profile-name { font-size: 22px; font-weight: 600; }
   .section-title { font-size: 18px; font-weight: 600; margin-bottom: 15px; margin-top: 30px;}
   
   .logout-btn { margin-top: 40px; width: 100%; padding: 14px; border: 2px solid var(--line); background: transparent; font-size: 16px; font-weight: 600; color: var(--text); cursor: pointer; }
@@ -122,8 +119,8 @@ const HTML_CONTENT = `
   <div class="content" id="view-me">
     <div class="container">
       <div class="profile-header">
-        <img class="avatar-large" id="me-avatar" src="" onclick="changeAvatar()" title="点击修改头像">
-        <div class="profile-name" id="me-name" onclick="changeName()">未登录</div>
+        <img class="avatar-large" id="me-avatar" src="">
+        <div class="profile-name" id="me-name">未登录</div>
       </div>
       <div class="section-title">我发布过的文章</div>
       <div id="me-list"></div>
@@ -200,7 +197,6 @@ const HTML_CONTENT = `
   let currentArticleAuthor = null;
   let allArticles = [];
 
-  // === 全局用户状态 ===
   let myProfile = { 
     email: localStorage.getItem("bbs_email") || "",
     nickname: localStorage.getItem("bbs_nickname") || "",
@@ -209,14 +205,13 @@ const HTML_CONTENT = `
 
   const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'></path><circle cx='12' cy='7' r='4'></circle></svg>";
 
-  // === 弹窗控制 ===
   let modalCallback = null;
   function showModal(title, desc, isInput, inputValue, callback) {
     document.getElementById("modal-title").innerText = title;
     document.getElementById("modal-desc").innerText = desc || "";
     document.getElementById("modal-desc").style.display = desc ? "block" : "none";
     const input = document.getElementById("modal-input");
-    if (isInput) { input.style.display = "block"; input.value = inputValue || ""; setTimeout(() => input.focus(), 100); } 
+    if (isInput) { input.style.display = "block"; input.value = inputValue || ""; } 
     else { input.style.display = "none"; }
     modalCallback = callback;
     document.getElementById("modal").classList.add("active");
@@ -240,98 +235,41 @@ const HTML_CONTENT = `
   function requireLogin() {
     if (!localStorage.getItem("bbs_token")) {
       const returnUrl = encodeURIComponent(window.location.href);
-      window.location.href = \`\${SSO_URL}?returnUrl=\${returnUrl}\`; 
+      window.location.href = SSO_URL + "?returnUrl=" + returnUrl + "&client=ylbbs"; 
       return false;
     }
     return true;
-  }
-
-  // === 从 D1 加载真实的用户资料 ===
-  async function loadUserProfile() {
-    if (!myProfile.email) return;
-    try {
-      const res = await fetch(\`\${API_BASE}/api/profile?email=\${encodeURIComponent(myProfile.email)}\`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          if (data.nickname) myProfile.nickname = data.nickname;
-          if (data.avatar) myProfile.avatar = data.avatar; 
-          
-          localStorage.setItem("bbs_nickname", myProfile.nickname);
-          if (myProfile.avatar) localStorage.setItem("bbs_avatar", myProfile.avatar);
-          updateUI();
-        }
-      }
-    } catch (e) { console.error("加载资料失败", e); }
   }
 
   function handleSSOCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token'); 
     const username = urlParams.get('username');
+    const avatar = urlParams.get('avatar');
     
     if (token && username) {
       localStorage.setItem("bbs_token", token);
       localStorage.setItem("bbs_email", username);
       myProfile.email = username;
       
+      localStorage.setItem("bbs_nickname", username);
+      myProfile.nickname = username;
+
+      if (avatar) {
+        localStorage.setItem("bbs_avatar", avatar);
+        myProfile.avatar = avatar;
+      }
+      
       window.history.replaceState({}, document.title, window.location.pathname);
-      loadUserProfile();
     }
   }
 
-  function changeAvatar() {
-    if (!requireLogin()) return;
-    const input = document.createElement("input"); input.type = "file"; input.accept = "image/*";
-    input.onchange = (e) => {
-      const file = e.target.files[0]; if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement("canvas"); const ctx = canvas.getContext("2d");
-          const size = 150; canvas.width = size; canvas.height = size;
-          ctx.drawImage(img, 0, 0, size, size);
-          const base64 = canvas.toDataURL("image/jpeg", 0.8);
-          
-          fetch(\`\${API_BASE}/api/profile\`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: myProfile.email, avatar: base64 })
-          }).then(() => {
-            myProfile.avatar = base64;
-            localStorage.setItem("bbs_avatar", base64);
-            updateUI();
-          });
-        };
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(file);
-    };
-    input.click();
-  }
-
-  function changeName() {
-    if (!requireLogin()) return;
-    showModal("修改昵称", "请输入新的用户名", true, getUser(), (newName) => {
-      if (newName && newName.trim()) {
-        const finalName = newName.trim();
-        fetch(\`\${API_BASE}/api/profile\`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: myProfile.email, nickname: finalName })
-        }).then(() => {
-          myProfile.nickname = finalName;
-          localStorage.setItem("bbs_nickname", finalName);
-          updateUI();
-        });
-      }
-    });
-  }
-  
   function logout() {
     showModal("确认退出", "确定要退出当前账号吗？", false, "", () => {
       localStorage.removeItem("bbs_token");
-      const returnUrl = encodeURIComponent(window.location.href);
-      window.location.href = \`\${SSO_URL}?returnUrl=\${returnUrl}\`;
+      localStorage.removeItem("bbs_nickname");
+      localStorage.removeItem("bbs_avatar");
+      requireLogin();
     });
   }
 
@@ -343,7 +281,7 @@ const HTML_CONTENT = `
     else if (tab === 'me') { window.history.pushState({}, "", "/?tab=me"); }
 
     document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
-    document.getElementById(\`view-\${tab}\`).classList.add('active');
+    document.getElementById('view-' + tab).classList.add('active');
     
     const nav = document.getElementById('bottom-nav');
     const commentBar = document.getElementById('comment-bar');
@@ -391,7 +329,7 @@ const HTML_CONTENT = `
     const listBox = document.getElementById("home-list");
     listBox.innerHTML = "<p style='color:#888;text-align:center;margin-top:40px;'>加载中...</p>";
     try {
-      const res = await fetch(\`\${API_BASE}/api/articles\`);
+      const res = await fetch(API_BASE + "/api/articles");
       allArticles = await res.json();
       if (allArticles.length === 0) {
         listBox.innerHTML = "<p style='color:#888;text-align:center;margin-top:40px;'>暂无文章，快去发布吧！</p>";
@@ -442,7 +380,7 @@ const HTML_CONTENT = `
     const ownerActions = document.getElementById('owner-actions');
     contentBox.innerText = "加载中..."; authorBox.innerText = ""; commentsBox.innerHTML = ""; ownerActions.style.display = "none";
     try {
-      const res = await fetch(\`\${API_BASE}/api/articles/\${id}\`);
+      const res = await fetch(API_BASE + "/api/articles/" + id);
       const data = await res.json();
       if(!data.article) { contentBox.innerText = "文章不存在或已被删除"; return; }
       
@@ -493,7 +431,7 @@ const HTML_CONTENT = `
     e.stopPropagation(); 
     showModal("删除评论", "确定要删除这条评论吗？", false, "", async () => {
       try {
-        const res = await fetch(\`\${API_BASE}/api/comments/\${commentId}\`, { method: "DELETE" });
+        const res = await fetch(API_BASE + "/api/comments/" + commentId, { method: "DELETE" });
         if (res.ok) { loadArticleDetail(currentArticleId); } 
         else { showModal("失败", "删除失败"); }
       } catch (error) { showModal("错误", "网络错误"); }
@@ -507,7 +445,7 @@ const HTML_CONTENT = `
     if (!title || !content) return showModal("提示", "标题和内容不能为空！");
     const btn = document.getElementById("btn-publish-action"); btn.innerText = "发布中...";
     try {
-      const res = await fetch(\`\${API_BASE}/api/articles\`, {
+      const res = await fetch(API_BASE + "/api/articles", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, content, author: getUser(), author_avatar: getAvatar() })
       });
@@ -517,7 +455,7 @@ const HTML_CONTENT = `
   }
 
   function editPost() {
-    fetch(\`\${API_BASE}/api/articles/\${currentArticleId}\`).then(r => r.json()).then(data => {
+    fetch(API_BASE + "/api/articles/" + currentArticleId).then(r => r.json()).then(data => {
       switchTab('write', { id: data.article.id, title: data.article.title, content: data.article.content });
     });
   }
@@ -528,7 +466,7 @@ const HTML_CONTENT = `
     if (!title || !content) return showModal("提示", "标题和内容不能为空！");
     const btn = document.getElementById("btn-publish-action"); btn.innerText = "保存中...";
     try {
-      const res = await fetch(\`\${API_BASE}/api/articles/\${id}\`, {
+      const res = await fetch(API_BASE + "/api/articles/" + id, {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, content, author: getUser() })
       });
@@ -540,7 +478,7 @@ const HTML_CONTENT = `
   function deletePost() {
     showModal("确认删除", "确定要永久删除这篇文章吗？", false, "", async () => {
       try {
-        const res = await fetch(\`\${API_BASE}/api/articles/\${currentArticleId}\`, { method: "DELETE" });
+        const res = await fetch(API_BASE + "/api/articles/" + currentArticleId, { method: "DELETE" });
         if (res.ok) { showModal("已删除", "文章删除成功", false, "", () => switchTab("home")); }
       } catch (e) { showModal("错误", "删除失败"); }
     });
@@ -551,19 +489,12 @@ const HTML_CONTENT = `
     const input = document.getElementById("comment-input"); const text = input.value.trim();
     if (!text) return;
     try {
-      const res = await fetch(\`\${API_BASE}/api/comments\`, {
+      const res = await fetch(API_BASE + "/api/comments", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ article_id: currentArticleId, content: text, author: getUser(), author_avatar: getAvatar() })
       });
       if (res.ok) { input.value = ""; loadArticleDetail(currentArticleId); }
     } catch (e) { showModal("错误", "评论失败"); }
-  }
-
-  function updateUI() {
-    document.getElementById("me-name").innerText = getUser() || "未登录";
-    document.getElementById("me-avatar").src = getAvatar();
-    if (currentTab === 'me') loadMe();
-    if (currentTab === 'home') loadHome();
   }
 
   function initRouter() {
@@ -586,7 +517,7 @@ const HTML_CONTENT = `
 `;
 
 // ==========================================
-// 2. 后端 API 逻辑 (D1 + KV)
+// 2. 后端 API 逻辑 
 // ==========================================
 export default {
   async fetch(request, env) {
@@ -601,68 +532,6 @@ export default {
       if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
       try {
-        // 用户资料 API
-        if (request.method === "GET" && url.pathname === "/api/profile") {
-          const email = url.searchParams.get("email");
-          if (!email) return new Response("Missing email", { status: 400, headers: corsHeaders });
-          
-          const user = await env.DB.prepare("SELECT nickname, avatar_key FROM user_profiles WHERE email = ?").bind(email).first();
-          let avatar_url = "";
-          if (user && user.avatar_key) {
-            avatar_url = `https://${url.hostname}/api/avatar/${user.avatar_key}`;
-          }
-          return new Response(JSON.stringify({ 
-            nickname: user ? user.nickname : "", 
-            avatar: avatar_url 
-          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-
-        if (request.method === "POST" && url.pathname === "/api/profile") {
-          const { email, nickname, avatar } = await request.json();
-          if (!email) return new Response("Missing email", { status: 400, headers: corsHeaders });
-
-          let avatar_key = null;
-          if (avatar) {
-            // 存入 KV，key 为用户的邮箱
-            avatar_key = email;
-            await env.BBS_AVATARS.put(avatar_key, avatar);
-          }
-
-          // 更新 D1
-          const exist = await env.DB.prepare("SELECT email FROM user_profiles WHERE email = ?").bind(email).first();
-          if (exist) {
-            if (nickname && avatar_key) {
-              await env.DB.prepare("UPDATE user_profiles SET nickname = ?, avatar_key = ? WHERE email = ?").bind(nickname, avatar_key, email).run();
-            } else if (nickname) {
-              await env.DB.prepare("UPDATE user_profiles SET nickname = ? WHERE email = ?").bind(nickname, email).run();
-            } else if (avatar_key) {
-              await env.DB.prepare("UPDATE user_profiles SET avatar_key = ? WHERE email = ?").bind(avatar_key, email).run();
-            }
-          } else {
-            await env.DB.prepare("INSERT INTO user_profiles (email, nickname, avatar_key) VALUES (?, ?, ?)").bind(email, nickname || "", avatar_key).run();
-          }
-          return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-
-        // 获取头像 API (从 KV 中读取返回)
-        if (request.method === "GET" && url.pathname.startsWith("/api/avatar/")) {
-          const key = url.pathname.split("/").pop();
-          const base64 = await env.BBS_AVATARS.get(key);
-          if (!base64) return new Response("Not found", { status: 404 });
-          
-          // 把 base64 字符串转换成图片二进制返回
-          const base64Data = base64.split(',')[1];
-          const binaryString = atob(base64Data);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          return new Response(bytes, {
-            headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" }
-          });
-        }
-
-        // 文章 API
         if (request.method === "GET" && url.pathname === "/api/articles") {
           const { results } = await env.DB.prepare("SELECT * FROM articles ORDER BY created_at DESC").all();
           return new Response(JSON.stringify(results), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -698,7 +567,6 @@ export default {
           return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
-        // 评论 API
         if (request.method === "POST" && url.pathname === "/api/comments") {
           const { article_id, content, author, author_avatar } = await request.json();
           if (!article_id || !content || !author) return new Response("缺少必要参数", { status: 400, headers: corsHeaders });
